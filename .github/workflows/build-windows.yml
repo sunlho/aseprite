@@ -1,0 +1,61 @@
+name: Build Aseprite Windows
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Download Skia
+        shell: bash
+        run: |
+          this_dir=$(cygpath "${{ github.workspace }}")
+          skia_url=$(source "$this_dir/laf/misc/skia-url.sh" | xargs)
+          skia_file=$(basename "$skia_url")
+
+          echo "Downloading $skia_url"
+
+          curl --ssl-revoke-best-effort -L \
+            -o "$skia_file" \
+            "$skia_url"
+
+          unzip "$skia_file" -d skia
+
+      - name: Install Ninja
+        uses: aseprite/get-ninja@main
+
+      - name: Setup MSVC
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: x64
+
+      - name: Configure
+        shell: bash
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DENABLE_TESTS=OFF \
+            -DENABLE_SCRIPTING=ON \
+            -DENABLE_CCACHE=OFF \
+            -DLAF_BACKEND=skia \
+            -DSKIA_DIR=$(realpath skia) \
+            -DSKIA_LIBRARY_DIR=$(realpath skia/out/Release-x64)
+
+      - name: Build
+        shell: bash
+        run: |
+          cmake --build build --target aseprite
+
+      - name: Upload Aseprite
+        uses: actions/upload-artifact@v4
+        with:
+          name: aseprite-windows-x64
+          path: build/bin/
